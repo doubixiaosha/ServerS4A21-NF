@@ -218,6 +218,12 @@ bool TryHandleCore(MSG* msg)
         Consume(msg);
         return true;
     }
+    if (Matches(g_keys.toggle_auto_grade, vk))
+    {
+        g_action(kToggleAutoGrade, 0);
+        Consume(msg);
+        return true;
+    }
     return false;
 }
 
@@ -325,6 +331,7 @@ Hotkeys LoadFromIni(const std::wstring& ini_path)
     h.move_right      = Parse(ReadIniStr(ini, L"热键", L"顺图右",     L"Alt+Right"), ok);
     h.toggle_pickup   = Parse(ReadIniStr(ini, L"热键", L"拾取开关",   L"Alt+Q"), ok);
     h.process_equip   = Parse(ReadIniStr(ini, L"热键", L"一键处理",   L"Alt+F"), ok);
+    h.toggle_auto_grade = Parse(ReadIniStr(ini, L"热键", L"自动评分", L"Alt+R"), ok);
     return h;
 }
 

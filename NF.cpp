@@ -211,6 +211,13 @@ void OnHotkeyAction(int action_id, int arg) {
     case kProcessEquip:
       gthread::Post([] { equip::ProcessAsync(); });
       break;
+    case kToggleAutoGrade:
+      gthread::Post([] {
+        g_auto_grade_enabled = !g_auto_grade_enabled;
+        notice::Send(g_auto_grade_enabled ? L"自动评分已开启" : L"自动评分已关闭");
+        ApplyAndRefresh();
+      });
+      break;
   }
 }
 

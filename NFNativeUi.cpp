@@ -279,6 +279,68 @@ bool SetControlText(int controlId, const std::wstring& text)
     return updated;
 }
 
+// 勾选/选中状态偏移 (两会话对比 + 点击对比定位):
+// 0x3B8 = 点击/活动标志, 点击时客户端原生翻转;
+// 0x4F0 = 绘制状态, 解析期由 IsCheck/checkedButtonIndex 写入,
+//         重开面板不重新解析, 必须每次按配置直写才能驱动视觉。
+constexpr size_t kCheckStateOffset = 0x3B8;
+constexpr size_t kCheckDrawOffset = 0x4F0;
+
+void WriteCheckState(int controlId, bool checked)
+{
+    ClientSharedPtr control;
+    if (!GetControl(controlId, control) || !control.object)
+    {
+        ReleaseClientSharedPtr(control);
+        return;
+    }
+    __try
+    {
+        unsigned char* bytes =
+            static_cast<unsigned char*>(control.object);
+        bytes[kCheckStateOffset] = checked ? 1 : 0;
+        bytes[kCheckDrawOffset] = checked ? 1 : 0;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+    ReleaseClientSharedPtr(control);
+}
+
+// 按当前配置同步勾选框与单选组的选中态 (每次面板刷新都会执行, 幂等)。
+void SyncControlStates(const UiState& state)
+{
+    WriteCheckState(kPickupButton, state.pickupEnabled);
+    WriteCheckState(kAutoGradeButton, state.autoGradeEnabled);
+    WriteCheckState(kGmButton, state.gmEnabled);  // 保留 GM 模式开关
+
+    if (state.pickupMode == 0 || state.pickupMode == 1)
+    {
+        WriteCheckState(kPickupModeRadioFirst, state.pickupMode == 0);
+        WriteCheckState(kPickupModeRadioFirst + 1,
+            state.pickupMode == 1);
+    }
+    if (state.filterMode == 0 || state.filterMode == 1)
+    {
+        WriteCheckState(kFilterModeRadioFirst, state.filterMode == 0);
+        WriteCheckState(kFilterModeRadioFirst + 1,
+            state.filterMode == 1);
+    }
+    if (state.moveMode == 0 || state.moveMode == 1)
+    {
+        WriteCheckState(kMoveModeRadioFirst, state.moveMode == 0);
+        WriteCheckState(kMoveModeRadioFirst + 1, state.moveMode == 1);
+    }
+    for (int q = 0; q < 6; ++q)
+    {
+        if (state.equipActions[q] < 0 || state.equipActions[q] > 2)
+            continue;
+        for (int a = 0; a < 3; ++a)
+            WriteCheckState(kQualityRadioFirst + q * 3 + a,
+                state.equipActions[q] == a);
+    }
+}
+
 // 逐项刷新文本（单选/勾选视觉不强制同步，CN 控件自己会记上次点的值；
 // 配置真实值在 statusText 文本里可查看）。
 int ApplyPendingState()
@@ -310,6 +372,10 @@ int ApplyPendingState()
         else
             ++failed;
     }
+
+    // 勾选/单选状态直写 (选中态在控件 +0x3B8, 布局缓存不重新解析,
+    // 每次刷新都按配置重写, 保证视觉与配置一致)。
+    SyncControlStates(want);
 
     g_hasPendingState = failed != 0;
     return failed;

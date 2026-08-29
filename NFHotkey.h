@@ -28,9 +28,10 @@ enum ActionId : int
     kMapMoveDown = 4,    // Alt+Down
     kTogglePickup = 5,   // Alt+Q
     kProcessEquip = 6,   // Alt+F
+    kToggleAutoGrade = 7, // Alt+R
 };
 
-// 热键集合（对应 [热键] 段的 7 个配置键）。
+// 热键集合（对应 [热键] 段的 8 个配置键）。
 struct Hotkeys
 {
     HotkeyBinding toggle_ui;
@@ -40,6 +41,7 @@ struct Hotkeys
     HotkeyBinding move_down;
     HotkeyBinding toggle_pickup;
     HotkeyBinding process_equip;
+    HotkeyBinding toggle_auto_grade;
 };
 
 // 安装钩子：传入 DLL 模块句柄 + 游戏窗口线程 ID + 动作回调（在游戏线程同步调用）。
@@ -52,7 +54,7 @@ void Shutdown();
 // 解析热键串："Alt+F11"/"Ctrl+Q"/"F1"/"Alt+Up"。失败时 valid=false。
 HotkeyBinding Parse(const std::wstring& text, bool& valid);
 
-// 读取 [热键] 段的 7 个键。ini_path 为空则按模块目录/NF.ini 回退。
+// 读取 [热键] 段的 8 个键。ini_path 为空则按模块目录/NF.ini 回退。
 Hotkeys LoadFromIni(const std::wstring& ini_path = L"");
 
 // 只在钩子回调或测试里用：命中热键即返回 true 并消费消息。

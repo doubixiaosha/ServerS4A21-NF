@@ -87,9 +87,13 @@ void NotifyListeners(const Settings& s) {
   }
 }
 
-// 仅从 ini 读取需要持久化的部分（热键 + 调试 + 过滤ID/名称过滤）。
+// 从 ini 读取需要持久化的部分（热键 + 调试 + 过滤ID/名称过滤 +
+// 拾取模式 + 顺图模式 + 6 品质装备动作）。
 // 过滤ID/名称过滤无界面输入入口，仍由 ini 提供并支持热重载；
-// 其余（三种模式、6 装备处理规则、拾取间隔）为纯内存，
+// 拾取模式持久化: 0=吸物（默认）1=发包，缺省/非法值回落吸物；
+// 装备动作: 白装/蓝装/紫装/粉装/史诗/异界 = 0保留/1卖物/2分解，非法值回落各自默认；
+// 顺图模式持久化: 0=坐标顺图（默认）1=强制顺图，缺省/非法值回落坐标顺图；
+// 其余（过滤模式、拾取间隔）为纯内存，
 // 不读文件、不写文件，初始即 Settings 默认值（与 XUI 布局默认一致）。
 void LoadFromFile() {
   Settings s;
@@ -101,14 +105,26 @@ void LoadFromFile() {
   s.hotkey_move_right    = ReadStr(kSecHotkey, L"顺图右",     s.hotkey_move_right.c_str());
   s.hotkey_toggle_pickup = ReadStr(kSecHotkey, L"拾取开关",   s.hotkey_toggle_pickup.c_str());
   s.hotkey_process_equip = ReadStr(kSecHotkey, L"一键处理",   s.hotkey_process_equip.c_str());
+  s.hotkey_auto_grade    = ReadStr(kSecHotkey, L"自动评分",   s.hotkey_auto_grade.c_str());
 
   // [调试]
   s.debug_enabled = ReadInt(kSecDebug, L"debug", 1);
   if (s.debug_enabled != 0) s.debug_enabled = 1;
 
-  // [自动拾取]/[装备处理] 中仅过滤ID与名称过滤持久化（无 UI 输入，用户直接改 ini）。
+  // [自动拾取]: 过滤ID（无 UI 输入，用户直接改 ini）与拾取模式持久化；
+  // [装备处理]: 名称过滤 + 6 品质动作持久化（动作键名 白装/蓝装/紫装/粉装/史诗/异界）。
   s.filter_ids  = ReadStr(kSecPickup, L"过滤ID", s.filter_ids.c_str());
+  s.pickup_mode = ReadInt(kSecPickup, L"拾取模式", 0);
+  if (s.pickup_mode != 0) s.pickup_mode = 1;
   s.name_filter = ReadStr(kSecEquip,  L"名称过滤", s.name_filter.c_str());
+  for (int q = 0; q < kQualityCount; ++q) {
+    const int v = ReadInt(kSecEquip, kQualityKeys[q], s.equip_action[q]);
+    if (v >= 0 && v <= 2) s.equip_action[q] = v;
+  }
+
+  // [顺图]: 顺图模式持久化 (0=坐标顺图（默认）1=强制顺图)。
+  s.move_mode = ReadInt(kSecMove, L"顺图模式", 0);
+  if (s.move_mode != 0) s.move_mode = 1;
 
   {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -116,8 +132,8 @@ void LoadFromFile() {
   }
 }
 
-// 热重载（NF.ini 被外部改动时）：只合并持久化字段（热键 + 调试 + 过滤ID/名称过滤）
-// 到现有 g_settings，保留内存中的模式/装备状态，
+// 热重载（NF.ini 被外部改动时）：只合并持久化字段（热键 + 调试 + 过滤ID/名称过滤 +
+// 拾取模式 + 顺图模式 + 6 品质装备动作）到现有 g_settings，保留内存中的过滤模式，
 // 避免外部改个热键就把当次会话的模式/规则冲掉。
 void LoadPersisted() {
   Settings patch;
@@ -128,10 +144,19 @@ void LoadPersisted() {
   patch.hotkey_move_right    = ReadStr(kSecHotkey, L"顺图右",     patch.hotkey_move_right.c_str());
   patch.hotkey_toggle_pickup = ReadStr(kSecHotkey, L"拾取开关",   patch.hotkey_toggle_pickup.c_str());
   patch.hotkey_process_equip = ReadStr(kSecHotkey, L"一键处理",   patch.hotkey_process_equip.c_str());
+  patch.hotkey_auto_grade    = ReadStr(kSecHotkey, L"自动评分",   patch.hotkey_auto_grade.c_str());
   patch.debug_enabled = ReadInt(kSecDebug, L"debug", 1);
   if (patch.debug_enabled != 0) patch.debug_enabled = 1;
   patch.filter_ids  = ReadStr(kSecPickup, L"过滤ID",  patch.filter_ids.c_str());
+  patch.pickup_mode = ReadInt(kSecPickup, L"拾取模式", patch.pickup_mode);
+  if (patch.pickup_mode != 0) patch.pickup_mode = 1;
   patch.name_filter = ReadStr(kSecEquip,  L"名称过滤", patch.name_filter.c_str());
+  for (int q = 0; q < kQualityCount; ++q) {
+    const int v = ReadInt(kSecEquip, kQualityKeys[q], patch.equip_action[q]);
+    if (v >= 0 && v <= 2) patch.equip_action[q] = v;
+  }
+  patch.move_mode = ReadInt(kSecMove, L"顺图模式", patch.move_mode);
+  if (patch.move_mode != 0) patch.move_mode = 1;
 
   std::lock_guard<std::mutex> lock(g_mutex);
   g_settings.hotkey_toggle_ui     = patch.hotkey_toggle_ui;
@@ -141,17 +166,22 @@ void LoadPersisted() {
   g_settings.hotkey_move_right    = patch.hotkey_move_right;
   g_settings.hotkey_toggle_pickup = patch.hotkey_toggle_pickup;
   g_settings.hotkey_process_equip = patch.hotkey_process_equip;
+  g_settings.hotkey_auto_grade    = patch.hotkey_auto_grade;
   g_settings.debug_enabled        = patch.debug_enabled;
   g_settings.filter_ids           = patch.filter_ids;
+  g_settings.pickup_mode          = patch.pickup_mode;
   g_settings.name_filter          = patch.name_filter;
+  for (int q = 0; q < kQualityCount; ++q)
+    g_settings.equip_action[q] = patch.equip_action[q];
+  g_settings.move_mode            = patch.move_mode;
 }
 
-// 只持久化热键 + 调试 + 过滤ID/名称过滤（后两者无 UI 输入，由用户手改 ini）。
-// 模式选择 / 装备处理规则 / 拾取间隔等其余字段为纯内存，
+// 只持久化热键 + 调试 + 过滤ID/名称过滤 + 拾取模式 + 顺图模式 + 6 品质装备动作。
+// 过滤模式、拾取间隔等其余字段为纯内存，
 // 不写文件（内存路径见 Set：g_settings 全量更新，本函数只落盘持久化字段）。
 void SaveToFile(const Settings& s) {
   InterlockedExchange(&g_saving, 1);
-  // [热键] —— 保证 ini 里这 7 个键永远存在，用户手动改时不用猜字段名。
+  // [热键] —— 保证 ini 里这 8 个键永远存在，用户手动改时不用猜字段名。
   WriteStr(kSecHotkey, L"呼出界面", s.hotkey_toggle_ui);
   WriteStr(kSecHotkey, L"顺图上",   s.hotkey_move_up);
   WriteStr(kSecHotkey, L"顺图下",   s.hotkey_move_down);
@@ -159,13 +189,22 @@ void SaveToFile(const Settings& s) {
   WriteStr(kSecHotkey, L"顺图右",   s.hotkey_move_right);
   WriteStr(kSecHotkey, L"拾取开关", s.hotkey_toggle_pickup);
   WriteStr(kSecHotkey, L"一键处理", s.hotkey_process_equip);
+  WriteStr(kSecHotkey, L"自动评分", s.hotkey_auto_grade);
 
   // [调试]
   WriteInt(kSecDebug, L"debug", s.debug_enabled);
 
-  // 过滤ID / 名称过滤 —— 无界面输入，持久化供用户手改（键名与读取一致）。
+  // 过滤ID —— 无界面输入，持久化供用户手改（键名与读取一致）。
   WriteStr(kSecPickup, L"过滤ID",  s.filter_ids);
+  // 拾取模式 —— 面板切换也走这里落盘，重启后保持上次选择（键名与读取一致）。
+  WriteInt(kSecPickup, L"拾取模式", s.pickup_mode);
+  // 名称过滤 —— 无界面输入，持久化供用户手改（键名与读取一致）。
   WriteStr(kSecEquip,  L"名称过滤", s.name_filter);
+  // 装备动作 (0=保留 1=卖物 2=分解) —— 面板改动也走这里落盘，重启后保持。
+  for (int q = 0; q < kQualityCount; ++q)
+    WriteInt(kSecEquip, kQualityKeys[q], s.equip_action[q]);
+  // 顺图模式 —— 面板改动也走这里落盘，重启后保持上次选择（键名与读取一致）。
+  WriteInt(kSecMove, L"顺图模式", s.move_mode);
 
   WritePrivateProfileStringW(nullptr, nullptr, nullptr, g_ini_path.c_str());
   InterlockedExchange(&g_saving, 0);

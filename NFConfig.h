@@ -52,6 +52,7 @@ struct Settings {
   std::wstring hotkey_move_right  = L"Alt+Right";
   std::wstring hotkey_toggle_pickup = L"Alt+Q";
   std::wstring hotkey_process_equip = L"Alt+F";
+  std::wstring hotkey_auto_grade  = L"Alt+R";  // 自动评分开关
 
   // [调试]
   int debug_enabled = 0;  // 1=写NF.log；0=关闭所有日志写
